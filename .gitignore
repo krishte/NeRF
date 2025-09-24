@@ -1,2 +1,3 @@
 datasets/
 renders/
+__pycache__/
