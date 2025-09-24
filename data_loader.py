@@ -63,7 +63,7 @@ class NeRFDataLoader:
         self.split = "val"
         self.H = self.W = 800
         self.num_val_images = num_val_images
-        self.batch_size = self.num_val_images * self.H * self.W
+        self.batch_size = self.H * self.W
         self.load_chunk_size = 1
 
         dataset = NeRFDataset(
@@ -234,13 +234,8 @@ class NeRFDataLoader:
             pixel_selections = np.random.randint(
                 0, self.W * self.H, size=self.batch_size * self.load_chunk_size
             )
-        elif self.split == "val":
-            image_indices = np.arange(self.num_val_images)
-            file_indices = np.repeat(image_indices, num_pixels)
-            single_image_pixels = np.arange(num_pixels)
-            pixel_selections = np.tile(single_image_pixels, self.num_val_images)
 
-        elif self.split == "test":
+        elif self.split == "test" or self.split == "val":
             image_indices = np.array([index])
             file_indices = np.repeat(image_indices, num_pixels)
             pixel_selections = np.arange(num_pixels)
@@ -255,6 +250,17 @@ class NeRFDataLoader:
             "points_on_rays": torch.from_numpy(self.points_on_rays).float(),
             "dists_on_rays": torch.from_numpy(self.dists_on_rays).float(),
             "deltas": torch.from_numpy(self.deltas).float(),
+        }
+
+    def get_val_data(self, index):
+        file_indices, pixel_selections = self.sample_files(index)
+        self.sample_points_from_rays(file_indices, pixel_selections)
+        return {
+            "ray_directions": torch.from_numpy(self.ray_directions).float(),
+            "points_on_rays": torch.from_numpy(self.points_on_rays).float(),
+            "dists_on_rays": torch.from_numpy(self.dists_on_rays).float(),
+            "deltas": torch.from_numpy(self.deltas).float(),
+            "real_colors": torch.from_numpy(self.colors).float(),
         }
 
     def get_fine_data(self, ray_origins, ray_directions, dists_on_rays_coarse, weights):
@@ -306,24 +312,9 @@ class NeRFDataLoader:
         return deltas, points_on_rays
 
     def get_data(self):
-        if self.split == "val" or self.split == "test":
-            file_indices, pixel_selections = self.sample_files()
-            self.sample_points_from_rays(file_indices, pixel_selections)
-            return_val = {
-                "ray_directions": torch.from_numpy(self.ray_directions).float(),
-                "points_on_rays": torch.from_numpy(self.points_on_rays).float(),
-                "dists_on_rays": torch.from_numpy(self.dists_on_rays).float(),
-                "deltas": torch.from_numpy(self.deltas).float(),
-            }
-            if self.split == "val":
-                return_val["real_colors"] = torch.from_numpy(self.colors).float()
-            return return_val
 
         self.current_batch_index += 1
-        if (
-            self.split == "train"
-            and self.current_batch_index % self.load_chunk_size == 0
-        ):
+        if self.current_batch_index % self.load_chunk_size == 0:
             self.current_batch_index = 0
             file_indices, pixel_selections = self.sample_files()
             self.sample_points_from_rays(file_indices, pixel_selections)

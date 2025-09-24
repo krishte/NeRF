@@ -86,7 +86,7 @@ def train(
             data["deltas"].cuda(),
         )
         optimizer.zero_grad()
-        pred_colors = model(points_on_rays, ray_directions, deltas)
+        pred_colors, _ = model(points_on_rays, ray_directions, deltas)
 
         loss = criterion(pred_colors, colors)
         writer.add_scalar("Loss/train", loss.item(), global_step)
@@ -100,33 +100,34 @@ def train(
     return global_step
 
 
-def validate(data_val, model, criterion, step, writer):
+def validate(data_val, model, criterion, step, writer, num_val_images=5):
     model.eval()
     with torch.no_grad():
         # Get all rays for the single validation image
-        data = data_val.get_data()
-        all_ray_directions = data["ray_directions"]
-        all_points_on_rays = data["points_on_rays"]
-        all_real_colors = data["real_colors"]
-        all_deltas = data["deltas"]
-
         pred_colors_list = []
 
-        # Process the image in chunks to avoid OOM errors
-        chunk_size = 4096
-        for i in tqdm(
-            range(0, all_points_on_rays.shape[0], chunk_size), desc="Validating"
-        ):
-            # Get chunk and move to GPU
-            ray_dirs_chunk = all_ray_directions[i : i + chunk_size].cuda()
-            points_chunk = all_points_on_rays[i : i + chunk_size].cuda()
-            deltas_chunk = all_deltas[i : i + chunk_size].cuda()
+        for i in range(num_val_images):
+            data = data_val.get_val_data(i)
+            all_ray_directions = data["ray_directions"]
+            all_points_on_rays = data["points_on_rays"]
+            all_real_colors = data["real_colors"]
+            all_deltas = data["deltas"]
 
-            # Run model
-            pred_chunk = model(points_chunk, ray_dirs_chunk, deltas_chunk)
+            # Process the image in chunks to avoid OOM errors
+            chunk_size = 4096
+            for i in tqdm(
+                range(0, all_points_on_rays.shape[0], chunk_size), desc="Validating"
+            ):
+                # Get chunk and move to GPU
+                ray_dirs_chunk = all_ray_directions[i : i + chunk_size].cuda()
+                points_chunk = all_points_on_rays[i : i + chunk_size].cuda()
+                deltas_chunk = all_deltas[i : i + chunk_size].cuda()
 
-            # Append results (move back to CPU to save GPU memory)
-            pred_colors_list.append(pred_chunk.cpu())
+                # Run model
+                pred_chunk = model(points_chunk, ray_dirs_chunk, deltas_chunk)
+
+                # Append results (move back to CPU to save GPU memory)
+                pred_colors_list.append(pred_chunk.cpu())
 
         # Concatenate all chunks and reshape to an image
         pred_image_tensor = torch.cat(pred_colors_list, dim=0)
@@ -168,39 +169,39 @@ def validate(data_val, model, criterion, step, writer):
 
 
 def main():
-    name = "nerf_experiment_fine_2"
+    name = "nerf_experiment_pos_enc_1"
     writer = SummaryWriter(f"runs/{name}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_train = NeRFDataLoader().init_train("lego")
     data_val = NeRFDataLoader().init_val("lego")
 
-    coarse_model = NeRFModel().to(device)
-    fine_model = NeRFModel().to(device)
+    coarse_model = NeRFModel(use_pos_enc=True).to(device)
+    # fine_model = NeRFModel().to(device)
     coarse_model.load_state_dict(
         torch.load(
-            "checkpoints/nerf_experiment_9_model_step_10000.pt", map_location=device
+            "checkpoints/nerf_experiment_pos_enc_1_coarse_model_pos_enc_step_10000.pt",
+            map_location=device,
         )
     )
-    for param in coarse_model.parameters():
-        param.requires_grad = False
+    # for param in coarse_model.parameters():
+    #     param.requires_grad = False
 
-    fine_model.load_state_dict(
-        torch.load(
-            "checkpoints/nerf_experiment_9_model_step_10000.pt", map_location=device
-        )
-    )
+    # fine_model.load_state_dict(
+    #     torch.load(
+    #         "checkpoints/nerf_experiment_9_model_step_10000.pt", map_location=device
+    #     )
+    # )
 
     criterion = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(fine_model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(coarse_model.parameters(), lr=5e-4)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99998848714)
 
-    global_step = 0
+    global_step = 10000
     for i in range(20):
-        global_step = train_coarse_and_fine(
+        global_step = train(
             data_train,
             coarse_model,
-            fine_model,
             criterion,
             optimizer,
             scheduler,
@@ -208,13 +209,13 @@ def main():
             writer,
         )
         coarse_checkpoint_path = (
-            f"checkpoints/{name}_coarse_model_step_{global_step}.pt"
+            f"checkpoints/{name}_coarse_model_pos_enc_step_{global_step}.pt"
         )
         fine_checkpoint_path = f"checkpoints/{name}_fine_model_step_{global_step}.pt"
         torch.save(coarse_model.state_dict(), coarse_checkpoint_path)
-        torch.save(fine_model.state_dict(), fine_checkpoint_path)
+        # torch.save(fine_model.state_dict(), fine_checkpoint_path)
 
-        validate(data_val, fine_model, criterion, global_step, writer)
+        # validate(data_val, coarse_model, criterion, global_step, writer)
 
 
 if __name__ == "__main__":

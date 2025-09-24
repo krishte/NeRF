@@ -32,7 +32,7 @@ def render(data_test, model, num_files):
                 deltas_chunk = all_deltas[i : i + chunk_size].cuda()
 
                 # Run model
-                pred_chunk = model(points_chunk, ray_dirs_chunk, deltas_chunk)
+                pred_chunk, _ = model(points_chunk, ray_dirs_chunk, deltas_chunk)
                 pred_colors_list.append(pred_chunk.cpu())
 
         # Concatenate all chunks and reshape to an image
@@ -46,7 +46,7 @@ def render(data_test, model, num_files):
             frames.append(frame)
 
     # Save the frames as a video file
-    video_path = f"renders/lego_video.mp4"
+    video_path = f"video_renders/lego_video_pos_enc_best.mp4"
     imageio.mimsave(video_path, frames, fps=30, quality=8)
     print(f"Video saved to {video_path}")
 
@@ -55,10 +55,11 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = NeRFModel().to(device)
+    model = NeRFModel(use_pos_enc=True).to(device)
     model.load_state_dict(
         torch.load(
-            "checkpoints/nerf_experiment_9_model_step_100000.pt", map_location=device
+            "checkpoints/nerf_experiment_pos_enc_1_coarse_model_pos_enc_step_70000.pt",
+            map_location=device,
         )
     )
 
