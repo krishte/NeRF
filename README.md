@@ -12,6 +12,10 @@ Achieved a PSNR of 28.5 after 8 hours of training on an RTX 2060
 
 ![loss_graph](./video_renders/training_loss.png)
 
+Here is a depth map calculated by taking the expectation over opacity along each ray
+
+![lego_crane_depth_map](./video_renders/lego_video_pos_enc_depth_map_colored.gif)
+
 ### Features
 
 This implementation includes the core components of the original NeRF paper:
